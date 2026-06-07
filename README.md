@@ -27,6 +27,30 @@ npm run typecheck  # 型チェックのみ
 
 ---
 
+## GitHub Pages へ公開する
+
+自動デプロイ用の GitHub Actions ワークフロー（`.github/workflows/deploy.yml`）を同梱しています。
+リポジトリを作って push するだけで、`main` への push ごとに自動でビルド＆公開されます。
+
+```bash
+# 1. GitHub で空のリポジトリを作成（README等は入れない）。例: rogue-shogi-3d
+# 2. このフォルダで remote を追加して push
+git remote add origin https://github.com/<あなたのユーザー名>/<リポジトリ名>.git
+git push -u origin main
+```
+
+3. GitHub のリポジトリ **Settings → Pages → Build and deployment → Source** を
+   **「GitHub Actions」** に設定。
+4. **Actions** タブでデプロイ完了を待つと、
+   `https://<ユーザー名>.github.io/<リポジトリ名>/` で公開されます。
+
+> Vite の `base` は本番ビルド時のみ相対パス（`./`）になるため、
+> リポジトリ名がどんな名前でもそのまま動きます（設定変更不要）。
+> `gh` CLI を使う場合は `gh repo create <名前> --public --source=. --push` の後に
+> Pages の Source を GitHub Actions にするだけです。
+
+---
+
 ## 操作方法
 
 | 操作 | 内容 |
