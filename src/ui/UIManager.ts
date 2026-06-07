@@ -3,6 +3,7 @@ import type { ActionLog, Player } from '../core/types';
 import { RARITY_COLOR, RARITY_LABEL } from '../core/types';
 import type { AbilityDef } from '../data/abilityData';
 import { getDef } from '../data/pieceData';
+import { CHARACTERS, type CharacterDef } from '../data/characterData';
 import { START_HOME_HP } from '../core/constants';
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -35,6 +36,9 @@ export class UIManager {
   onSelectHand: (type: string) => void = () => {};
   onSmite: () => void = () => {};
   onTaunt: () => void = () => {};
+  onUltimate: () => void = () => {};
+  onStartHome: () => void = () => {};
+  onPickCharacter: (id: string) => void = () => {};
   onRestart: () => void = () => {};
 
   private root: HTMLElement;
@@ -42,6 +46,7 @@ export class UIManager {
   private turnNum!: HTMLElement;
   private hpFill: Record<Player, HTMLElement> = {} as Record<Player, HTMLElement>;
   private hpText: Record<Player, HTMLElement> = {} as Record<Player, HTMLElement>;
+  private charBadge: Record<Player, HTMLElement> = {} as Record<Player, HTMLElement>;
   private selectedPanel!: HTMLElement;
   private handPanel!: HTMLElement;
   private passivePanel!: HTMLElement;
@@ -49,6 +54,8 @@ export class UIManager {
   private logList!: HTMLElement;
   private cardsOverlay!: HTMLElement;
   private gameOverOverlay!: HTMLElement;
+  private homeOverlay!: HTMLElement;
+  private charOverlay!: HTMLElement;
   private toastEl!: HTMLElement;
 
   constructor(root: HTMLElement) {
@@ -100,6 +107,12 @@ export class UIManager {
     this.gameOverOverlay = el('div', 'gameover-overlay hidden');
     this.root.append(this.gameOverOverlay);
 
+    this.homeOverlay = el('div', 'home-overlay hidden');
+    this.root.append(this.homeOverlay);
+
+    this.charOverlay = el('div', 'char-overlay hidden');
+    this.root.append(this.charOverlay);
+
     this.toastEl = el('div', 'toast hidden');
     this.root.append(this.toastEl);
 
@@ -116,9 +129,11 @@ export class UIManager {
     const fill = el('div', 'hp-fill');
     track.append(fill);
     const text = el('div', 'hp-text', `${START_HOME_HP}/${START_HOME_HP}`);
-    box.append(track, text);
+    const char = el('div', 'hp-char', '—');
+    box.append(track, text, char);
     parent.append(box);
     this.hpText[who] = text;
+    this.charBadge[who] = char;
     return fill;
   }
 
@@ -148,6 +163,10 @@ export class UIManager {
       const pct = Math.max(0, (st.homeHp / max) * 100);
       this.hpFill[who].style.width = `${pct}%`;
       this.hpText[who].textContent = `${st.homeHp}/${st.maxHomeHp}`;
+      const ch = game.getCharacter(who);
+      this.charBadge[who].innerHTML =
+        `<span class="emblem" style="background:${ch.color}">${ch.emblem}</span>` +
+        `<span class="cname">${ch.name}<small>${ch.title}</small></span>`;
     }
 
     this.refreshSelected(game);
@@ -176,6 +195,18 @@ export class UIManager {
   private refreshControls(game: GameManager): void {
     this.controlsPanel.innerHTML = '';
     if (game.phase !== 'play') return;
+
+    // 奥義 (ultimate) button — always shown on your turn, with cooldown state.
+    const ch = game.getCharacter('player');
+    const cd = game.players.player.ultimateCd;
+    const ult = el('button', `ctrl-btn ult${cd > 0 ? ' disabled' : ''}`,
+      cd > 0 ? `奥義 残り${cd}T` : `⚔ 奥義「${ch.ultimateName}」`);
+    ult.title = ch.ultimateDesc;
+    if (cd === 0) {
+      ult.style.background = `linear-gradient(135deg, ${ch.color}, #1b2233)`;
+      ult.onclick = () => this.onUltimate();
+    }
+    this.controlsPanel.append(ult);
 
     const hasGod = game.board.piecesOf('player').some((p) => p.type === 'god' && p.cooldown === 0);
     if (hasGod) {
@@ -267,12 +298,72 @@ export class UIManager {
     this.gameOverOverlay.innerHTML = '';
     const box = el('div', `gameover-box ${win ? 'win' : 'lose'}`);
     box.append(el('div', 'gameover-title', win ? '勝利！' : '敗北…'));
-    box.append(el('div', 'gameover-sub', win ? '相手を打ち破った！' : '次はきっと勝てる'));
-    const btn = el('button', 'restart-btn', 'もう一度プレイ');
+    box.append(el('div', 'gameover-sub', win ? '銀河を制した！' : '次はきっと勝てる'));
+    const btn = el('button', 'restart-btn', 'タイトルへ戻る');
     btn.onclick = () => this.onRestart();
     box.append(btn);
     this.gameOverOverlay.append(box);
     this.gameOverOverlay.classList.remove('hidden');
+  }
+
+  // ================================================================ home / character select
+  /** The title screen: 銀河将棋X². */
+  showHome(): void {
+    this.gameOverOverlay.classList.add('hidden');
+    this.charOverlay.classList.add('hidden');
+    this.homeOverlay.innerHTML = '';
+    const box = el('div', 'home-box');
+    box.innerHTML = `
+      <div class="home-sub">ROGUELIKE SHOGI</div>
+      <h1 class="home-title">銀河将棋<span class="x">X<sup>2</sup></span></h1>
+      <div class="home-desc">将棋 × ローグライク × 武将の奥義。<br>軍師を選び、銀河の覇権を賭けて戦え。</div>
+      <button class="home-start">▶ ゲームスタート</button>
+      <div class="home-tip">ドラッグで視点回転 / ホイールでズーム</div>`;
+    box.querySelector<HTMLButtonElement>('.home-start')!.onclick = () => this.onStartHome();
+    this.homeOverlay.append(box);
+    this.homeOverlay.classList.remove('hidden');
+  }
+
+  hideHome(): void {
+    this.homeOverlay.classList.add('hidden');
+  }
+
+  /** The commander-select screen. */
+  showCharacterSelect(): void {
+    this.homeOverlay.classList.add('hidden');
+    this.charOverlay.innerHTML = '';
+    const wrap = el('div', 'char-wrap');
+    wrap.append(el('div', 'char-head', '軍師を選べ'));
+    const grid = el('div', 'char-grid');
+    for (const c of CHARACTERS) {
+      grid.append(this.makeCharCard(c));
+    }
+    wrap.append(grid);
+    this.charOverlay.append(wrap);
+    this.charOverlay.classList.remove('hidden');
+  }
+
+  hideCharacterSelect(): void {
+    this.charOverlay.classList.add('hidden');
+  }
+
+  private makeCharCard(c: CharacterDef): HTMLElement {
+    const card = el('div', 'char-card');
+    card.style.borderColor = c.color;
+    card.innerHTML = `
+      <div class="char-top">
+        <span class="char-emblem" style="background:${c.color}">${c.emblem}</span>
+        <div class="char-id">
+          <div class="char-name">${c.name}</div>
+          <div class="char-title" style="color:${c.color}">${c.title}</div>
+        </div>
+      </div>
+      <div class="char-quote">${c.quote}</div>
+      <div class="char-skill"><b>パッシブ｜${c.passiveName}</b><span>${c.passiveDesc}</span></div>
+      <div class="char-skill ult"><b>奥義｜${c.ultimateName}（CD${c.ultimateCooldown}）</b><span>${c.ultimateDesc}</span></div>
+      <button class="char-pick" style="background:${c.color}">この軍師で出陣</button>`;
+    card.querySelector<HTMLButtonElement>('.char-pick')!.onclick = () => this.onPickCharacter(c.id);
+    return card;
   }
 
   // ================================================================ toast

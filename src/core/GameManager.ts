@@ -7,6 +7,7 @@ import {
 import { BOARD_SIZE, START_HOME_HP } from './constants';
 import { getDef, SUMMONABLE_SPECIALS, PAWN_EVOLUTIONS, type PieceDef } from '../data/pieceData';
 import { rollCards, type AbilityDef } from '../data/abilityData';
+import { getCharacterDef, randomCharacterExcept, type CharacterDef } from '../data/characterData';
 import { SpecialEffectManager } from './SpecialEffectManager';
 import { AIController } from './AIController';
 
@@ -27,6 +28,9 @@ export interface PlayerState {
   passives: PassiveEntry[];
   abilityLog: { name: string; rarity: Rarity }[];
   rarityBonus: number; // 神託 carry-over for the next card offer
+  characterId: string; // chosen commander
+  ultimateCd: number; // turns until the 奥義 is ready (0 = ready)
+  pieceMods: Buff[]; // permanent buffs auto-applied to every spawned piece
 }
 
 export interface GameEvents {
@@ -89,7 +93,18 @@ export class GameManager {
       passives: [],
       abilityLog: [],
       rarityBonus: 0,
+      characterId: 'uesugi',
+      ultimateCd: 0,
+      pieceMods: [],
     };
+  }
+
+  getCharacter(owner: Player): CharacterDef {
+    return getCharacterDef(this.players[owner].characterId);
+  }
+
+  foeOf(owner: Player): Player {
+    return opponentOf(owner);
   }
 
   get foe(): Player {
@@ -97,9 +112,23 @@ export class GameManager {
   }
 
   // ---------------------------------------------------------------- setup
-  start(): void {
+  start(playerCharId: string, aiCharId?: string): void {
+    this.players.player.characterId = playerCharId;
+    this.players.ai.characterId = aiCharId ?? randomCharacterExcept(playerCharId).id;
+
     this.setupInitialPosition();
-    this.log('ゲーム開始！ ローグライク将棋へようこそ。', true);
+
+    // Apply each commander's permanent passive.
+    for (const who of ['player', 'ai'] as Player[]) {
+      const ch = this.getCharacter(who);
+      this.actor = who;
+      ch.applyPassive(this, who);
+      this.players[who].ultimateCd = 2; // not usable on the very first turn
+    }
+
+    const pc = this.getCharacter('player');
+    const ac = this.getCharacter('ai');
+    this.log(`銀河将棋X²、開戦！  あなた：${pc.name} ／ 敵：${ac.name}`, true);
     this.beginTurn('player');
   }
 
@@ -128,6 +157,10 @@ export class GameManager {
   private spawn(type: Piece['type'], owner: Player, row: number, col: number): Piece {
     const p = new Piece(type, owner, row, col);
     this.board.place(p, row, col);
+    // Apply the owner's permanent piece modifiers (commander passives, 全軍強化…).
+    for (const mod of this.players[owner].pieceMods) {
+      p.addBuff({ ...mod, id: `${mod.id}_${p.id}` });
+    }
     return p;
   }
 
@@ -146,7 +179,12 @@ export class GameManager {
       p.tickBuffs();
       if (p.cooldown > 0) p.cooldown -= 1;
     }
+    if (this.players[side].ultimateCd > 0) this.players[side].ultimateCd -= 1;
     this.effects.applyAuras(side); // king's-pressure etc. recomputed each turn
+
+    // Commander per-turn passive (e.g. オタワの抜き打ちテスト, 風の疾風).
+    this.actor = side;
+    this.getCharacter(side).onTurnStart?.(this, side);
 
     // Offer a roguelike ability card.
     const state = this.players[side];
@@ -296,6 +334,10 @@ export class GameManager {
       if (lethal) {
         captured = target;
         this.killPiece(target, piece.owner);
+        // 火（侵掠如火）: capturing splashes 1 damage onto the enemy base.
+        if (this.hasPassive(piece.owner, 'fire-spread') && !this.winner) {
+          this.damageHome(opponentOf(piece.owner), 1);
+        }
         if (!this.winner) this.board.relocate(piece, to.row, to.col);
       } else {
         target.damage(piece.attack);
@@ -430,6 +472,16 @@ export class GameManager {
   private async runAITurn(): Promise<void> {
     this.events.onState();
     await sleep(450);
+
+    // Commander ultimate: offensive ults fire ASAP, defensive ults when hurt.
+    if (this.players.ai.ultimateCd === 0) {
+      const ch = this.getCharacter('ai');
+      const homeRatio = this.players.ai.homeHp / Math.max(1, this.players.ai.maxHomeHp);
+      if (ch.aiHint === 'offense' || homeRatio < 0.7) {
+        this.activateUltimate('ai');
+        await sleep(500);
+      }
+    }
 
     // God smite if available.
     const god = this.board.piecesOf('ai').find((p) => p.type === 'god' && p.cooldown === 0);
@@ -591,6 +643,58 @@ export class GameManager {
   grantExtraActions(owner: Player, n: number): void {
     if (owner === this.turn) this.actionsLeft += n;
     this.log(`追加行動 +${n}！`, true);
+  }
+
+  /** Permanent army-wide modifier: applied now AND to every future spawn. */
+  addArmyMod(owner: Player, mod: Buff): void {
+    this.players[owner].pieceMods.push(mod);
+    for (const p of this.board.piecesOf(owner)) {
+      p.addBuff({ ...mod, id: `${mod.id}_${p.id}` });
+    }
+  }
+
+  /** Stun every enemy piece (used by オタワ's 期末試験 ultimate). */
+  stunEnemies(owner: Player, turns: number, includeKing = false): void {
+    let n = 0;
+    for (const p of this.board.piecesOf(opponentOf(owner))) {
+      if (!includeKing && p.type === 'king') continue;
+      p.addBuff({ id: 'mass-stun', label: '行動不能', turns, stunned: true });
+      n++;
+    }
+    this.log(`敵コマ${n}体が行動不能になった！`, true);
+  }
+
+  /** Fully (or partially) heal all of a side's pieces (used by 山's ultimate). */
+  healAllOwn(owner: Player, amount: number): void {
+    for (const p of this.board.piecesOf(owner)) p.heal(amount);
+    this.log('自軍が回復した', false);
+  }
+
+  // ----- ultimate (奥義) -----
+  /** Player-facing entry point for the 奥義 button. */
+  useUltimate(): void {
+    if (this.phase !== 'play' || this.turn !== 'player') return;
+    if (this.players.player.ultimateCd > 0) {
+      this.events.onMessage(`奥義はあと${this.players.player.ultimateCd}ターンで使えます`);
+      return;
+    }
+    this.activateUltimate('player');
+  }
+
+  activateUltimate(owner: Player): void {
+    const st = this.players[owner];
+    if (st.ultimateCd > 0) return;
+    const ch = this.getCharacter(owner);
+    this.actor = owner;
+    this.log(`${ch.name}が奥義「${ch.ultimateName}」を発動！`, true);
+    this.events.onMessage(`奥義「${ch.ultimateName}」！`);
+    try {
+      ch.applyUltimate(this, owner);
+    } catch (e) {
+      console.error('ultimate failed', ch.id, e);
+    }
+    st.ultimateCd = ch.ultimateCooldown;
+    this.events.onState();
   }
 
   upgradeRandomPiece(owner: Player): void {
