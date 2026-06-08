@@ -1,6 +1,3 @@
-// Vite injects import.meta.env at build time. We cast to avoid depending on
-// vite/client types, which may not be present in all type-check environments.
-
 import type { GameManager } from '../core/GameManager';
 import { ABILITIES } from '../data/abilityData';
 import type { PieceType } from '../core/types';
@@ -28,15 +25,13 @@ function getGame(): GameManager | null {
 }
 
 /**
- * Development-only cheat console.
+ * Hidden cheat console — not surfaced in any UI.
  *
  * Activation (any of the following):
  *   - Backtick ` key
  *   - Sequential typing of "iddqd"
  *   - 5× pointerdown within 1.5 s in the top-right corner tap zone
  *     (works with both mouse and touch — no physical keyboard required)
- *
- * Disabled entirely in production builds via import.meta.env.DEV.
  */
 export class CheatConsole {
   private overlayEl!: HTMLDivElement;
@@ -55,8 +50,6 @@ export class CheatConsole {
   private readonly TAP_WINDOW_MS = 1500;
 
   constructor() {
-    const isDev = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV;
-    if (!isDev) return;
     this.buildDOM();
     this.wireKeyboard();
     this.wireTapZone();

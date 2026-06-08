@@ -55,6 +55,8 @@ export class SceneManager {
 
     this.bindInput(canvas);
     window.addEventListener('resize', () => this.resize());
+    // iOS Safari changes visualViewport when the address bar shows/hides
+    window.visualViewport?.addEventListener('resize', () => this.resize());
     this.resize();
     this.animate(0);
   }
@@ -119,11 +121,22 @@ export class SceneManager {
     return { row, col };
   }
 
+  // Reference horizontal FOV derived from 45° vFov at 16:9 landscape.
+  // Kept constant across orientations so the board doesn't shrink on portrait screens.
+  private static readonly H_FOV_RAD =
+    2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(45) / 2) * (16 / 9));
+
   private resize(): void {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const vv = window.visualViewport;
+    const w = vv ? vv.width : window.innerWidth;
+    const h = vv ? vv.height : window.innerHeight;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
+    const aspect = w / h;
+    this.camera.aspect = aspect;
+    // Recalculate vertical FOV so horizontal coverage stays constant.
+    this.camera.fov = THREE.MathUtils.radToDeg(
+      2 * Math.atan(Math.tan(SceneManager.H_FOV_RAD / 2) / aspect),
+    );
     this.camera.updateProjectionMatrix();
   }
 
