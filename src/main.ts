@@ -2,6 +2,7 @@ import './style.css';
 import { SceneManager } from './render/SceneManager';
 import { BoardRenderer } from './render/BoardRenderer';
 import { UIManager } from './ui/UIManager';
+import { CheatConsole } from './ui/CheatConsole';
 import { GameManager, type GameEvents } from './core/GameManager';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -11,6 +12,8 @@ const uiRoot = document.getElementById('ui-root') as HTMLElement;
 const sceneMgr = new SceneManager(canvas);
 const renderer = new BoardRenderer(sceneMgr);
 const ui = new UIManager(uiRoot);
+// DEV only — no-op in production builds.
+new CheatConsole();
 
 let game: GameManager | null = null;
 

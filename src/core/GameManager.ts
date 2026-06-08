@@ -886,4 +886,27 @@ export class GameManager {
     if (p.buffs.length) lines.push('効果: ' + p.buffs.map((b) => b.label).join('・'));
     return lines.join('\n');
   }
+
+  // ================================================================
+  // Cheat / dev API — called only from CheatConsole (DEV builds).
+  // ================================================================
+
+  /** Set home HP to an exact value, expanding maxHomeHp if needed. */
+  cheatSetHomeHp(owner: Player, n: number): void {
+    const st = this.players[owner];
+    if (n > st.maxHomeHp) st.maxHomeHp = n;
+    st.homeHp = Math.max(0, n);
+    this.events.onState();
+  }
+
+  /** Trigger immediate victory for the player. */
+  cheatWin(): void {
+    if (this.phase === 'over') return;
+    this.setWinner('player', 'チートコマンド「win」による勝利');
+  }
+
+  /** Push a full state notification to renderer and UI. */
+  cheatRefreshState(): void {
+    this.events.onState();
+  }
 }
