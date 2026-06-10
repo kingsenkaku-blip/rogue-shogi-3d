@@ -6,7 +6,7 @@ import {
 } from './types';
 import { BOARD_SIZE, START_HOME_HP } from './constants';
 import { getDef, SUMMONABLE_SPECIALS, PAWN_EVOLUTIONS, type PieceDef } from '../data/pieceData';
-import { rollCards, type AbilityDef } from '../data/abilityData';
+import { rollCards, ABILITY_BY_ID, type AbilityDef } from '../data/abilityData';
 import { getCharacterDef, randomCharacterExcept, type CharacterDef } from '../data/characterData';
 import { SpecialEffectManager } from './SpecialEffectManager';
 import { AIController } from './AIController';
@@ -845,6 +845,37 @@ export class GameManager {
     this.log(`${getDef(type as Piece['type']).name}を打った`, false);
     if (owner === 'player') this.afterAction(this.board.at(row, col)!, false);
     this.events.onState();
+  }
+
+  // ================================================================
+  // Debug / cheat API — used only by the DEV-only CheatConsole.
+  // These delegate to existing rule logic; they add no new game rules.
+  // ================================================================
+  /** Force the renderer + UI to re-read game state. */
+  notify(): void {
+    this.events.onState();
+  }
+
+  /** Instantly set a side's home HP (raises the cap if needed). */
+  setHomeHp(owner: Player, n: number): void {
+    const st = this.players[owner];
+    st.homeHp = Math.max(0, Math.floor(n));
+    if (st.homeHp > st.maxHomeHp) st.maxHomeHp = st.homeHp;
+    this.log(`【CHEAT】${owner === 'player' ? 'あなた' : 'AI'}の本拠地HPを${st.homeHp}に設定`, true);
+    if (st.homeHp <= 0) this.setWinner(opponentOf(owner), '【CHEAT】');
+  }
+
+  /** Apply an ability card by its id, as if `owner` had drafted it. */
+  giveCardById(id: string, owner: Player = 'player'): boolean {
+    const card = ABILITY_BY_ID.get(id);
+    if (!card) return false;
+    this.applyAbility(card, owner);
+    return true;
+  }
+
+  /** Debug instant win for `who`. */
+  debugWin(who: Player = 'player'): void {
+    this.setWinner(who, '【CHEAT】強制決着');
   }
 
   // ================================================================

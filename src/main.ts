@@ -2,6 +2,7 @@ import './style.css';
 import { SceneManager } from './render/SceneManager';
 import { BoardRenderer } from './render/BoardRenderer';
 import { UIManager } from './ui/UIManager';
+import { CheatConsole } from './ui/CheatConsole';
 import { GameManager, type GameEvents } from './core/GameManager';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -56,3 +57,9 @@ ui.onPickCharacter = (id) => startGame(id);
 ui.onRestart = () => ui.showHome();
 
 ui.showHome();
+
+// Dev/demo-only cheat console. Disabled in production builds (import.meta.env.DEV
+// is false after `vite build`), so it can never ship to GitHub Pages by accident.
+if (import.meta.env.DEV) {
+  new CheatConsole(() => game, uiRoot);
+}
