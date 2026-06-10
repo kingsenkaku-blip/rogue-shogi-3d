@@ -14,24 +14,26 @@ import { PIECE_DATA, SUMMONABLE_SPECIALS } from '../data/pieceData';
  *      1. keyboard: type "iddqd", or press backtick (`).
  *      2. touch:    tap the top-right screen corner 5× within 1.5s
  *         (pointerdown-based → works for mouse, touch and pen alike).
- *  - Running a cheat shows a fake "loading" window (progress bar + terminal-style
- *    log) purely for flavour; the *real* effect is applied when the bar fills.
+ *  - On open, a command-prompt style boot演出 plays *inside the console output*:
+ *    a rotating |/-/-\ spinner and an ASCII progress bar like `58%[■■■■....]`,
+ *    rendered in Courier New. Commands themselves apply immediately.
  *
  * Disabled in production builds (see main.ts gate on import.meta.env.DEV).
  */
 
-// ---- loading-window演出: swap these to retune the show (pure flavour) --------
-const LOADING_DURATION_MS = 2600;
+// ---- boot演出: tweak these to retune the show (pure flavour) -----------------
+const BOOT_DURATION_MS = 2600;
+const BAR_WIDTH = 20;
+const SPINNER = ['|', '/', '-', '\\']; // the rotating vertical bar
 /** Fake, non-existent paths only — never reference real src/ files here. */
-const LOADING_LINES: string[] = [
+const BOOT_LINES: string[] = [
   '> !injection /sys/core/cheat_engine.bin ... OK',
   '> mounting overlay://shogi/godmode.mod',
   '> alloc 0x0DEFACED .. 0x0C0FFEE  (galaxy heap)',
   '> patch 0x4F2A applied',
   '> rewriting /proc/banou/ougi.tbl',
   '> verifying signature ... PASS',
-  '> sync overlay://galaxy/x2.img  [■■■■■■■■]',
-  '> [DONE] cheat module loaded',
+  '> sync overlay://galaxy/x2.img',
 ];
 
 type CheatOutcome =
@@ -43,13 +45,11 @@ export class CheatConsole {
   private bar!: HTMLElement;
   private input!: HTMLInputElement;
   private out!: HTMLElement;
-  private loadWin!: HTMLElement;
-  private loadBar!: HTMLElement;
-  private loadPct!: HTMLElement;
-  private loadLog!: HTMLElement;
 
   private open = false;
-  private busy = false; // a loading演出 is currently running
+  private booting = false;
+  private bootSkip: (() => void) | null = null;
+  private bootTimer: number | null = null;
   private keyBuffer = '';
   private cornerTaps = 0;
   private lastCornerTap = 0;
@@ -87,21 +87,6 @@ export class CheatConsole {
       if (e.key === 'Enter') { e.preventDefault(); this.submit(); }
       e.stopPropagation(); // don't let the global key triggers see console typing
     });
-
-    // Loading演出 window.
-    this.loadWin = document.createElement('div');
-    this.loadWin.className = 'cheat-load hidden';
-    this.loadWin.innerHTML = `
-      <div class="cheat-load-box">
-        <div class="cheat-load-title">LOADING CHEAT MODULE…</div>
-        <div class="cheat-load-barwrap"><div class="cheat-load-bar"></div></div>
-        <div class="cheat-load-pct">0%</div>
-        <div class="cheat-loadlog"></div>
-      </div>`;
-    this.root.appendChild(this.loadWin);
-    this.loadBar = this.loadWin.querySelector('.cheat-load-bar')!;
-    this.loadPct = this.loadWin.querySelector('.cheat-load-pct')!;
-    this.loadLog = this.loadWin.querySelector('.cheat-loadlog')!;
   }
 
   // ----------------------------------------------------------------- triggers
@@ -143,16 +128,83 @@ export class CheatConsole {
     if (this.open) return;
     this.open = true;
     this.bar.classList.remove('hidden');
-    if (!this.out.childElementCount) this.printHelp();
     // Focus synchronously so iOS opens the soft keyboard (we're inside a gesture).
     this.input.focus();
     setTimeout(() => this.input.focus(), 60);
+    this.boot(); // command-prompt startup演出 plays in the output area
   }
 
   private close(): void {
     this.open = false;
+    this.stopBoot();
     this.bar.classList.add('hidden');
     this.input.blur();
+  }
+
+  private stopBoot(): void {
+    this.booting = false;
+    this.bootSkip = null;
+    if (this.bootTimer !== null) { clearInterval(this.bootTimer); this.bootTimer = null; }
+  }
+
+  // ----------------------------------------------------------------- boot演出
+  /**
+   * Plays a command-prompt style "loading" sequence inside the console output
+   * on open: a rotating |/-\ spinner and an ASCII bar like `58%[■■■■....]`.
+   * Driven by setInterval (not rAF) so it keeps running even if the tab is
+   * backgrounded, and the spinner advances per tick so it always rotates.
+   */
+  private boot(): void {
+    this.stopBoot();
+    this.out.innerHTML = '';
+    this.booting = true;
+    this.print('SYS // initializing cheat engine…', 'sys');
+
+    // The live progress line stays at the bottom and is rewritten each tick.
+    const prog = document.createElement('div');
+    prog.className = 'cheat-line boot';
+    this.out.appendChild(prog);
+
+    const start = performance.now();
+    let shown = 0;
+    let tick = 0;
+
+    const finalize = (): void => {
+      if (!this.booting) return;
+      this.stopBoot();
+      while (shown < BOOT_LINES.length) this.insertBootLine(BOOT_LINES[shown++], prog);
+      prog.textContent = `- 100%[${'■'.repeat(BAR_WIDTH)}]`;
+      this.print('[DONE] cheat module loaded', 'ok');
+      this.printHelp();
+      this.out.scrollTop = this.out.scrollHeight;
+    };
+    this.bootSkip = finalize;
+
+    this.bootTimer = window.setInterval(() => {
+      if (!this.booting) { this.stopBoot(); return; }
+      tick += 1;
+      const p = Math.min(1, (performance.now() - start) / BOOT_DURATION_MS);
+
+      // Reveal fake log lines progressively, above the live progress line.
+      const want = Math.floor(p * BOOT_LINES.length);
+      while (shown < want && shown < BOOT_LINES.length) this.insertBootLine(BOOT_LINES[shown++], prog);
+
+      const pct = String(Math.round(p * 100)).padStart(3, ' ');
+      const fill = Math.round(p * BAR_WIDTH);
+      const gauge = '■'.repeat(fill) + '.'.repeat(BAR_WIDTH - fill);
+      const spin = SPINNER[tick % SPINNER.length];
+      prog.textContent = `${spin} ${pct}%[${gauge}]`;
+      this.out.scrollTop = this.out.scrollHeight;
+
+      if (p >= 1) finalize();
+    }, 80);
+  }
+
+  private insertBootLine(text: string, ref: HTMLElement): void {
+    const l = document.createElement('div');
+    l.className = 'cheat-line boot';
+    l.textContent = text;
+    this.out.insertBefore(l, ref);
   }
 
   // ----------------------------------------------------------------- output
@@ -162,7 +214,7 @@ export class CheatConsole {
     line.textContent = text;
     this.out.appendChild(line);
     this.out.scrollTop = this.out.scrollHeight;
-    while (this.out.childElementCount > 60) this.out.firstChild?.remove();
+    while (this.out.childElementCount > 80) this.out.firstChild?.remove();
   }
 
   private printHelp(): void {
@@ -172,16 +224,17 @@ export class CheatConsole {
     this.print('  spawn <type>   特殊コマを召喚（例: spawn god）');
     this.print('  sethp <n>      自軍本拠地HPを n に設定');
     this.print('  win            即勝利（デバッグ）');
+    this.print('  reboot         起動演出をもう一度再生');
     this.print('  help           このヘルプを表示');
   }
 
   // ----------------------------------------------------------------- run
   private submit(): void {
+    if (this.booting) this.bootSkip?.(); // a keypress skips the boot animation
     const raw = this.input.value.trim();
     this.input.value = '';
     if (!raw) return;
     this.print(`> ${raw}`, 'echo');
-    if (this.busy) { this.print('… ロード中です。少し待ってください', 'warn'); return; }
     this.run(raw);
     this.input.focus();
   }
@@ -191,6 +244,7 @@ export class CheatConsole {
     const name = cmd.toLowerCase();
 
     if (name === 'help') { this.printHelp(); return; }
+    if (name === 'reboot') { this.boot(); return; }
 
     const game = this.getGame();
     if (!game) { this.print('ゲーム開始前です。対局を始めてから使ってください', 'warn'); return; }
@@ -201,16 +255,13 @@ export class CheatConsole {
     const outcome = handler(game, args);
     if (!outcome.ok) { this.print(outcome.msg, 'err'); return; }
 
-    // Flavour loading window, then apply the real effect.
-    this.runLoading(() => {
-      try {
-        outcome.apply();
-        game.notify();
-        this.print(`✔ ${outcome.summary}`, 'ok');
-      } catch (err) {
-        this.print(`実行エラー: ${String(err)}`, 'err');
-      }
-    });
+    try {
+      outcome.apply();
+      game.notify();
+      this.print(`✔ ${outcome.summary}`, 'ok');
+    } catch (err) {
+      this.print(`実行エラー: ${String(err)}`, 'err');
+    }
   }
 
   /** Command table — each returns either an error or an `apply` thunk. */
@@ -258,51 +309,4 @@ export class CheatConsole {
 
     win: (g) => ({ ok: true, summary: '強制勝利', apply: () => g.debugWin('player') }),
   };
-
-  // ----------------------------------------------------------------- loading演出
-  private runLoading(onDone: () => void): void {
-    this.busy = true;
-    this.loadLog.innerHTML = '';
-    this.loadBar.style.width = '0%';
-    this.loadPct.textContent = '0%';
-    this.loadWin.classList.remove('hidden');
-
-    const start = performance.now();
-    const total = LOADING_LINES.length;
-    let shown = 0;
-
-    const frame = (now: number) => {
-      const p = Math.min(1, (now - start) / LOADING_DURATION_MS);
-      const pct = Math.round(p * 100);
-      this.loadBar.style.width = `${pct}%`;
-      this.loadPct.textContent = `${pct}%`;
-
-      // Reveal log lines spread across the duration.
-      const wantShown = Math.floor(p * total);
-      while (shown < wantShown && shown < total) {
-        const l = document.createElement('div');
-        l.textContent = LOADING_LINES[shown];
-        this.loadLog.appendChild(l);
-        this.loadLog.scrollTop = this.loadLog.scrollHeight;
-        shown += 1;
-      }
-
-      if (p < 1) {
-        requestAnimationFrame(frame);
-      } else {
-        // Make sure the final line is shown.
-        while (shown < total) {
-          const l = document.createElement('div');
-          l.textContent = LOADING_LINES[shown++];
-          this.loadLog.appendChild(l);
-        }
-        setTimeout(() => {
-          this.loadWin.classList.add('hidden');
-          this.busy = false;
-          onDone();
-        }, 350);
-      }
-    };
-    requestAnimationFrame(frame);
-  }
 }

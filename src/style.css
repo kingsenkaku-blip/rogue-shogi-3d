@@ -384,7 +384,7 @@ html, body {
   top: 12px; left: 50%;
   transform: translateX(-50%);
   width: min(560px, 94vw);
-  background: rgba(8, 12, 20, 0.96);
+  background: rgba(6, 10, 14, 0.97);
   border: 1px solid #2a6f4e;
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0,0,0,.55);
@@ -400,6 +400,7 @@ html, body {
   padding: 8px 12px;
   background: rgba(46,111,78,.18);
   border-bottom: 1px solid rgba(78,255,122,.18);
+  font-family: "Courier New", Courier, monospace;
 }
 .cheat-tag { color: #4eff7a; font-weight: 700; font-size: 13px; letter-spacing: .04em; }
 .cheat-tag small { color: var(--muted); font-weight: 500; }
@@ -407,23 +408,30 @@ html, body {
   width: 36px; height: 36px; border: none; border-radius: 8px;
   background: rgba(255,255,255,.08); color: #fff; font-size: 14px;
 }
+
+/* terminal output — Courier New, green-on-black command-prompt look */
 .cheat-out {
-  padding: 8px 12px; overflow-y: auto; min-height: 60px; max-height: 32vh;
-  font-size: 12.5px; line-height: 1.55; color: #cdd7d2;
+  font-family: "Courier New", Courier, monospace;
+  padding: 10px 12px; overflow-y: auto; min-height: 120px; max-height: 44vh;
+  font-size: 13px; line-height: 1.5; color: #4eff7a;
+  background: #03070b;
 }
 .cheat-line { white-space: pre-wrap; word-break: break-word; }
+.cheat-line.boot { color: #4eff7a; }
 .cheat-line.echo { color: #8fe3ff; }
-.cheat-line.ok { color: #4eff7a; }
+.cheat-line.ok { color: #6dffa0; font-weight: 700; }
 .cheat-line.err { color: #ff6a8c; }
 .cheat-line.warn { color: #ffd24a; }
-.cheat-line.sys { color: var(--muted); }
+.cheat-line.sys { color: #2f9e63; }
 .cheat-row {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; border-top: 1px solid rgba(78,255,122,.18);
+  background: #03070b;
 }
-.cheat-caret { color: #4eff7a; font-weight: 800; }
+.cheat-caret { color: #4eff7a; font-weight: 800; font-family: "Courier New", Courier, monospace; }
 .cheat-input {
   flex: 1; min-height: 44px;
+  font-family: "Courier New", Courier, monospace;
   background: rgba(0,0,0,.5); border: 1px solid #2a6f4e; border-radius: 8px;
   color: #eafff0; font-size: 16px; padding: 0 12px; outline: none;
 }
@@ -434,46 +442,6 @@ html, body {
   font-weight: 800; font-size: 14px;
 }
 .cheat-run:hover { filter: brightness(1.1); }
-
-/* ---- loading演出 window ---- */
-.cheat-load {
-  position: fixed; inset: 0; z-index: 10000;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(4,7,12,.72);
-  backdrop-filter: blur(3px);
-  pointer-events: auto;
-}
-.cheat-load.hidden { display: none; }
-.cheat-load-box {
-  width: min(520px, 92vw);
-  background: #0a0f16; border: 1px solid #2a6f4e; border-radius: 14px;
-  padding: 20px; box-shadow: 0 16px 50px rgba(0,0,0,.6);
-}
-.cheat-load-title {
-  font-size: 15px; font-weight: 800; letter-spacing: .14em; color: #eafff0;
-  text-align: center; margin-bottom: 14px;
-}
-.cheat-load-barwrap {
-  height: 16px; background: rgba(0,0,0,.55);
-  border: 1px solid #173a28; border-radius: 8px; overflow: hidden;
-}
-.cheat-load-bar {
-  height: 100%; width: 0%;
-  background: linear-gradient(90deg,#1f8f4d,#4eff7a);
-  box-shadow: 0 0 14px rgba(78,255,122,.6);
-  transition: width .06s linear;
-}
-.cheat-load-pct { text-align: right; color: #4eff7a; font-size: 12px; margin: 6px 2px 12px; }
-
-/* terminal log — the monospace terminal font is applied ONLY here */
-.cheat-loadlog {
-  font-family: "SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
-  font-size: 12.5px; line-height: 1.6;
-  color: #4eff7a; background: #03070b;
-  border: 1px solid #173a28; border-radius: 8px;
-  padding: 10px 12px; height: 168px; max-height: 40vh; overflow-y: auto;
-  white-space: pre-wrap; word-break: break-word;
-}
 
 @media (max-width: 560px) {
   .cheat-bar { top: 6px; }
